@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.dSYM/
+
+# Distribution artifacts
+dist/
+*.app
+*.zip
+
+# Local editor files
+.idea/
+.vscode/
+*~

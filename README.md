@@ -51,6 +51,15 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 4. 조작 Mac의 주소와 동일한 포트·공유 키를 입력하고 시작합니다.
 5. Screen Sharing 창에서 한/영을 변경합니다.
 
+대상 Mac에서 `Screen Sharing 주소 찾기`를 누르면 직접 연결된 접속자의 주소를
+검색합니다. 발견된 주소를 확인한 뒤 `적용`을 누르면 조작 Mac 주소에 입력됩니다.
+감지할 수 없거나 여러 대가 접속한 경우에는 주소를 직접 입력합니다.
+
+주소 검색은 대상 Mac의 TCP 연결 테이블에서 로컬 포트 5900인 직접 연결을
+확인합니다. Screen Sharing 서버는 `root` 프로세스로 실행되므로 일반 사용자
+권한의 `lsof`에는 연결이 표시되지 않을 수 있어, InputBridge는 `netstat`의 TCP
+테이블을 사용합니다.
+
 같은 LAN에서는 IP 대신 Bonjour 호스트 이름을 사용할 수 있습니다.
 
 ```sh
@@ -84,15 +93,24 @@ swift test
 Developer ID 없이 Apple Silicon과 Intel을 지원하는 `.app.zip`을 만듭니다.
 Apple Silicon 실행에 필요한 ad-hoc 서명만 적용되며, 받는 Mac에서는 최초 실행 시
 시스템 설정의 개인정보 보호 및 보안에서 `그래도 열기`를 선택해야 합니다.
+경고를 닫은 뒤 해당 설정 화면에서 InputBridge의 `확인 없이 열기`를 선택하거나,
+직접 받은 빌드를 신뢰하는 경우 다음 명령으로 격리 속성을 제거할 수 있습니다.
 
 ```sh
-./Scripts/package-unsigned.sh 0.1.3
+xattr -dr com.apple.quarantine /Applications/InputBridge.app
+open /Applications/InputBridge.app
+```
+
+패키지 생성:
+
+```sh
+./Scripts/package-unsigned.sh 0.1.4
 ```
 
 결과:
 
 ```text
-dist/InputBridge-0.1.3-unsigned-universal.zip
+dist/InputBridge-0.1.4-unsigned-universal.zip
 ```
 
 ## 현재 구현
@@ -100,6 +118,7 @@ dist/InputBridge-0.1.3-unsigned-universal.zip
 - macOS 입력 소스 변경 알림 및 0.2초 폴링
 - ABC와 기본 한글 두벌식의 portable ID 매핑
 - Network.framework TCP 송수신
+- 직접 연결된 Screen Sharing 접속자의 주소 자동 감지
 - 연결 실패 시 자동 재연결
 - 공유 키 HMAC-SHA256 메시지 인증
 - timestamp와 sequence 기반 기본 replay 방지
@@ -128,12 +147,17 @@ nc -G 3 -vz <조작-Mac-주소> 45831
 - `Connection refused`: 조작 Mac이 수신 대기 중인지 확인합니다.
 - `Operation timed out`: 주소, macOS 방화벽 또는 VPN 경로를 확인합니다.
 - `인증되지 않았거나 오래된 메시지 무시`: 양쪽 공유 키와 시스템 시간을 확인합니다.
+- Screen Sharing 주소가 검색되지 않음: 대상 Mac에서 직접 Screen Sharing 연결이
+  유지 중인지 확인합니다. 여러 접속자 또는 Apple Account 중계 연결은 자동으로
+  선택하지 않습니다.
 
 ## 보안 및 제한 사항
 
 - 입력 소스 식별자만 전송하며 입력한 텍스트는 전송하지 않습니다.
 - HMAC은 메시지를 인증하지만 TCP 내용을 암호화하지는 않습니다.
 - 공유 키는 현재 Keychain에 저장되지 않습니다.
+- Screen Sharing 주소 자동 감지는 직접 TCP 연결에 한정되며, 다중 접속이나
+  Apple Account 중계 연결에서는 수동 주소 입력이 필요할 수 있습니다.
 - Bonjour 자동 검색과 코드 기반 페어링은 아직 구현되지 않았습니다.
 - Apple Account 기반 Screen Sharing 중계 연결은 InputBridge의 TCP 연결을
   대신 전달하지 않습니다. 별도의 LAN 또는 VPN 경로가 필요합니다.

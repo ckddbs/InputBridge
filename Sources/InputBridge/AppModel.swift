@@ -23,8 +23,12 @@ final class AppModel: ObservableObject {
     @Published var useKoreanMapping = true
     @Published private(set) var isRunning = false
     @Published private(set) var status = "중지됨"
+    @Published private(set) var detectedScreenSharingHost: String?
+    @Published private(set) var isSearchingScreenSharingHost = false
+    @Published private(set) var screenSharingSearchMessage: String?
 
     private let inputSources = InputSourceController()
+    private let peerDetector = ScreenSharingPeerDetector()
     private var transport: SyncTransport?
 
     func toggle() {
@@ -36,6 +40,40 @@ final class AppModel: ObservableObject {
             stop()
         }
         NSApplication.shared.terminate(nil)
+    }
+
+    func searchScreenSharingPeer() {
+        guard role == .sender, !isRunning, !isSearchingScreenSharingHost else { return }
+
+        isSearchingScreenSharingHost = true
+        detectedScreenSharingHost = nil
+        screenSharingSearchMessage = nil
+
+        let detector = peerDetector
+        Task.detached(priority: .utility) {
+            let detectedHost = detector.detect()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isSearchingScreenSharingHost = false
+                self.detectedScreenSharingHost = detectedHost
+                self.screenSharingSearchMessage = detectedHost == nil
+                    ? "직접 연결된 Screen Sharing 주소를 찾지 못했습니다."
+                    : nil
+            }
+        }
+    }
+
+    func confirmDetectedScreenSharingHost() {
+        guard !isRunning, let detectedHost = detectedScreenSharingHost else { return }
+        host = detectedHost
+        self.detectedScreenSharingHost = nil
+        screenSharingSearchMessage = "주소를 적용했습니다."
+    }
+
+    func dismissDetectedScreenSharingHost() {
+        guard !isRunning else { return }
+        detectedScreenSharingHost = nil
+        screenSharingSearchMessage = nil
     }
 
     private func start() {

@@ -45,6 +45,43 @@ private struct MenuContent: View {
 
             if model.role == .sender {
                 TextField("조작 Mac 주소 또는 이름", text: $model.host)
+
+                HStack {
+                    Button {
+                        model.searchScreenSharingPeer()
+                    } label: {
+                        if model.isSearchingScreenSharingHost {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Screen Sharing 주소 찾기", systemImage: "magnifyingglass")
+                        }
+                    }
+                    .disabled(model.isRunning || model.isSearchingScreenSharingHost)
+                    Spacer()
+                }
+
+                if let detectedHost = model.detectedScreenSharingHost {
+                    HStack(spacing: 8) {
+                        Image(systemName: "display.and.arrow.down")
+                        Text("발견: \(detectedHost)")
+                            .textSelection(.enabled)
+                        Spacer()
+                        Button("취소") {
+                            model.dismissDetectedScreenSharingHost()
+                        }
+                        Button("적용") {
+                            model.confirmDetectedScreenSharingHost()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(8)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                } else if let message = model.screenSharingSearchMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             TextField("포트", value: $model.port, format: .number)

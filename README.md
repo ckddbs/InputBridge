@@ -51,6 +51,10 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 4. 조작 Mac의 주소와 동일한 포트·공유 키를 입력하고 시작합니다.
 5. Screen Sharing 창에서 한/영을 변경합니다.
 
+대상 Mac에서 `Screen Sharing 주소 찾기`를 누르면 직접 연결된 접속자의 주소를
+검색합니다. 발견된 주소를 확인한 뒤 `적용`을 누르면 조작 Mac 주소에 입력됩니다.
+감지할 수 없거나 여러 대가 접속한 경우에는 주소를 직접 입력합니다.
+
 같은 LAN에서는 IP 대신 Bonjour 호스트 이름을 사용할 수 있습니다.
 
 ```sh
@@ -100,6 +104,7 @@ dist/InputBridge-0.1.3-unsigned-universal.zip
 - macOS 입력 소스 변경 알림 및 0.2초 폴링
 - ABC와 기본 한글 두벌식의 portable ID 매핑
 - Network.framework TCP 송수신
+- 직접 연결된 Screen Sharing 접속자의 주소 자동 감지
 - 연결 실패 시 자동 재연결
 - 공유 키 HMAC-SHA256 메시지 인증
 - timestamp와 sequence 기반 기본 replay 방지
@@ -134,6 +139,8 @@ nc -G 3 -vz <조작-Mac-주소> 45831
 - 입력 소스 식별자만 전송하며 입력한 텍스트는 전송하지 않습니다.
 - HMAC은 메시지를 인증하지만 TCP 내용을 암호화하지는 않습니다.
 - 공유 키는 현재 Keychain에 저장되지 않습니다.
+- Screen Sharing 주소 자동 감지는 직접 TCP 연결에 한정되며, 다중 접속이나
+  Apple Account 중계 연결에서는 수동 주소 입력이 필요할 수 있습니다.
 - Bonjour 자동 검색과 코드 기반 페어링은 아직 구현되지 않았습니다.
 - Apple Account 기반 Screen Sharing 중계 연결은 InputBridge의 TCP 연결을
   대신 전달하지 않습니다. 별도의 LAN 또는 VPN 경로가 필요합니다.

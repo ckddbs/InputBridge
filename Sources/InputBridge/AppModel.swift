@@ -57,7 +57,7 @@ final class AppModel: ObservableObject {
                 self.isSearchingScreenSharingHost = false
                 self.detectedScreenSharingHost = detectedHost
                 self.screenSharingSearchMessage = detectedHost == nil
-                    ? "연결된 Screen Sharing 주소를 찾지 못했습니다."
+                    ? "직접 연결된 Screen Sharing 주소를 찾지 못했습니다."
                     : nil
             }
         }

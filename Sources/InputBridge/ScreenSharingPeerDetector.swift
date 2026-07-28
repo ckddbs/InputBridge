@@ -7,13 +7,11 @@ struct ScreenSharingPeerDetector {
         let process = Process()
         let output = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = [
-            "-nP",
-            "-iTCP:\(Self.screenSharingPort)",
-            "-sTCP:ESTABLISHED",
-            "-Fn"
-        ]
+        // screensharingd runs as root, so lsof invoked by this user cannot see its
+        // sockets. netstat reads the TCP table and exposes the connection without
+        // requiring the app to run as root.
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/netstat")
+        process.arguments = ["-an", "-p", "tcp"]
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
 
@@ -26,29 +24,30 @@ struct ScreenSharingPeerDetector {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
-        return Self.peerHost(fromLsofOutput: text)
+        guard process.terminationStatus == 0,
+              let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return Self.peerHost(fromNetstatOutput: text)
     }
 
-    static func peerHost(fromLsofOutput output: String) -> String? {
+    static func peerHost(fromNetstatOutput output: String) -> String? {
         let hosts = Set(
             output
                 .split(whereSeparator: \.isNewline)
-                .compactMap { line -> String? in
-                    guard line.first == "n" else { return nil }
-                    return peerHost(fromConnection: String(line.dropFirst()))
-                }
+                .compactMap { peerHost(fromNetstatLine: String($0)) }
         )
 
-        // 자동 선택은 현재 Screen Sharing 접속자가 정확히 한 대일 때만 안전하다.
         return hosts.count == 1 ? hosts.first : nil
     }
 
-    private static func peerHost(fromConnection connection: String) -> String? {
-        let endpoints = connection.components(separatedBy: "->")
-        guard endpoints.count == 2,
-              let local = parseEndpoint(endpoints[0]),
-              let remote = parseEndpoint(endpoints[1]),
+    private static func peerHost(fromNetstatLine line: String) -> String? {
+        let fields = line.split(whereSeparator: \.isWhitespace)
+        guard fields.count >= 6,
+              fields[0].hasPrefix("tcp"),
+              fields[5] == "ESTABLISHED",
+              let local = parseEndpoint(fields[3]),
+              let remote = parseEndpoint(fields[4]),
               local.port == screenSharingPort,
               !remote.host.isEmpty,
               remote.host != "127.0.0.1",
@@ -59,22 +58,11 @@ struct ScreenSharingPeerDetector {
         return remote.host
     }
 
-    private static func parseEndpoint(_ endpoint: String) -> (host: String, port: UInt16)? {
-        if endpoint.hasPrefix("["),
-           let closingBracket = endpoint.lastIndex(of: "]"),
-           endpoint.index(after: closingBracket) < endpoint.endIndex {
-            let colon = endpoint.index(after: closingBracket)
-            guard endpoint[colon] == ":",
-                  let port = UInt16(endpoint[endpoint.index(after: colon)...]) else {
-                return nil
-            }
-            return (String(endpoint[endpoint.index(after: endpoint.startIndex)..<closingBracket]), port)
-        }
-
-        guard let colon = endpoint.lastIndex(of: ":"),
-              let port = UInt16(endpoint[endpoint.index(after: colon)...]) else {
+    private static func parseEndpoint(_ endpoint: Substring) -> (host: String, port: UInt16)? {
+        guard let separator = endpoint.lastIndex(of: "."),
+              let port = UInt16(endpoint[endpoint.index(after: separator)...]) else {
             return nil
         }
-        return (String(endpoint[..<colon]), port)
+        return (String(endpoint[..<separator]), port)
     }
 }

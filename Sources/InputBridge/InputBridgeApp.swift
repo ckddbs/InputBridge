@@ -39,12 +39,13 @@ private struct MenuContent: View {
             .pickerStyle(.segmented)
             .disabled(model.isRunning)
 
-            Text(model.role.explanation)
+            Text(model.roleExplanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if model.role == .sender {
-                TextField("조작 Mac 주소 또는 이름", text: $model.host)
+            if model.showsHostField {
+                TextField(model.hostFieldPrompt, text: $model.host)
+                    .disabled(model.isRunning)
 
                 HStack {
                     Button {
@@ -54,10 +55,24 @@ private struct MenuContent: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Label("Screen Sharing 주소 찾기", systemImage: "magnifyingglass")
+                            Label(model.peerSearchTitle, systemImage: "magnifyingglass")
                         }
                     }
                     .disabled(model.isRunning || model.isSearchingScreenSharingHost)
+
+                    if model.role == .receiver && model.connectionMode == .automatic {
+                        Button {
+                            model.searchInputBridgePort()
+                        } label: {
+                            if model.isSearchingInputBridgePort {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label("포트 찾기", systemImage: "network")
+                            }
+                        }
+                        .disabled(!model.canSearchInputBridgePort)
+                    }
                     Spacer()
                 }
 
@@ -82,10 +97,42 @@ private struct MenuContent: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                if let message = model.portSearchMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.waitingTitle)
+                        Text("주소 입력은 필요하지 않습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             }
 
-            TextField("포트", value: $model.port, format: .number)
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("포트", value: $model.port, format: .number)
+
+                Picker("연결 방식", selection: $model.connectionMode) {
+                    ForEach(SyncConnectionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .frame(width: 150)
+            }
+            .disabled(model.isRunning)
+
             SecureField("공유 키", text: $model.sharedSecret)
+                .disabled(model.isRunning)
 
             Toggle("ABC ↔ 한글(2벌식) 기본 매핑", isOn: $model.useKoreanMapping)
                 .disabled(model.isRunning)

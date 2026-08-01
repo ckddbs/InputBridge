@@ -1,9 +1,14 @@
 import Foundation
 
+enum ScreenSharingConnectionDirection: Equatable {
+    case incoming
+    case outgoing
+}
+
 struct ScreenSharingPeerDetector {
     static let screenSharingPort: UInt16 = 5900
 
-    func detect() -> String? {
+    func detect(direction: ScreenSharingConnectionDirection) -> String? {
         let process = Process()
         let output = Pipe()
 
@@ -28,27 +33,39 @@ struct ScreenSharingPeerDetector {
               let text = String(data: data, encoding: .utf8) else {
             return nil
         }
-        return Self.peerHost(fromNetstatOutput: text)
+        return Self.peerHost(fromNetstatOutput: text, direction: direction)
     }
 
-    static func peerHost(fromNetstatOutput output: String) -> String? {
+    static func peerHost(
+        fromNetstatOutput output: String,
+        direction: ScreenSharingConnectionDirection = .incoming
+    ) -> String? {
         let hosts = Set(
             output
                 .split(whereSeparator: \.isNewline)
-                .compactMap { peerHost(fromNetstatLine: String($0)) }
+                .compactMap {
+                    peerHost(fromNetstatLine: String($0), direction: direction)
+                }
         )
 
         return hosts.count == 1 ? hosts.first : nil
     }
 
-    private static func peerHost(fromNetstatLine line: String) -> String? {
+    private static func peerHost(
+        fromNetstatLine line: String,
+        direction: ScreenSharingConnectionDirection
+    ) -> String? {
         let fields = line.split(whereSeparator: \.isWhitespace)
         guard fields.count >= 6,
               fields[0].hasPrefix("tcp"),
               fields[5] == "ESTABLISHED",
               let local = parseEndpoint(fields[3]),
-              let remote = parseEndpoint(fields[4]),
-              local.port == screenSharingPort,
+              let remote = parseEndpoint(fields[4]) else {
+            return nil
+        }
+
+        let expectedPort = direction == .incoming ? local.port : remote.port
+        guard expectedPort == screenSharingPort,
               !remote.host.isEmpty,
               remote.host != "127.0.0.1",
               remote.host != "::1" else {

@@ -18,23 +18,19 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 ## 동작 구조
 
 ```text
-조작 Mac에서 Screen Sharing으로 한/영 전환
-                    │
-                    ▼
-          Screen Sharing 대상 Mac
-           입력 소스 변경 감지
-                    │ TCP 45831
-                    ▼
-                조작 Mac
-           같은 입력 소스로 적용
+조작 Mac ── TCP 45831 연결 시작 ──▶ Screen Sharing 대상 Mac
+조작 Mac ◀── 같은 연결로 입력 소스 전송 ── 대상 Mac
 ```
+
+`자동` 모드는 Screen Sharing과 같은 방향으로 연결하므로 NAT나 비대칭 라우팅의
+영향을 줄입니다. 이 방향이 불가능하면 대상 Mac이 기존 방향으로 연결을 시도합니다.
 
 앱은 양쪽 Mac에 모두 설치합니다.
 
 | Mac | InputBridge 역할 | 설정 |
 | --- | --- | --- |
-| 키보드를 사용하는 Mac | `조작 Mac` | 포트와 공유 키를 입력하고 수신 대기 |
-| Screen Sharing 대상 Mac | `대상 Mac` | 조작 Mac 주소, 같은 포트와 공유 키 입력 |
+| 키보드를 사용하는 Mac | `조작 Mac` | 대상 Mac 주소, 포트와 공유 키 입력 |
+| Screen Sharing 대상 Mac | `대상 Mac` | 같은 포트와 공유 키를 입력하고 연결 대기 |
 
 ## 요구 사항
 
@@ -45,20 +41,27 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 
 ## 사용 방법
 
-1. 키보드를 사용하는 Mac에서 `조작 Mac`을 선택합니다.
-2. 포트와 공유 키를 입력하고 시작합니다.
-3. Screen Sharing 대상 Mac에서 `대상 Mac`을 선택합니다.
-4. 조작 Mac의 주소와 동일한 포트·공유 키를 입력하고 시작합니다.
-5. Screen Sharing 창에서 한/영을 변경합니다.
+1. 대상 Mac에서 `대상 Mac`, `자동 (권장)`을 선택하고 포트와 공유 키를 입력해
+   시작합니다.
+2. 키보드를 사용하는 Mac에서 `조작 Mac`, `자동 (권장)`을 선택합니다.
+3. `Screen Sharing 대상 찾기`를 눌러 주소를 적용합니다.
+4. 대상 Mac이 이미 실행 중이면 `포트 찾기`로 열린 InputBridge 포트를 자동
+   적용하거나, 대상 Mac과 같은 포트를 직접 입력합니다.
+5. 같은 공유 키를 입력하고 시작합니다.
+6. Screen Sharing 창에서 한/영을 변경합니다.
 
-대상 Mac에서 `Screen Sharing 주소 찾기`를 누르면 직접 연결된 접속자의 주소를
-검색합니다. 발견된 주소를 확인한 뒤 `적용`을 누르면 조작 Mac 주소에 입력됩니다.
-감지할 수 없거나 여러 대가 접속한 경우에는 주소를 직접 입력합니다.
+조작 Mac의 `Screen Sharing 대상 찾기`는 나가는 Screen Sharing 연결의 원격 주소를
+검색합니다. 발견된 주소를 확인한 뒤 `적용`을 누르면 대상 Mac 주소에 입력됩니다.
+감지할 수 없거나 여러 대상에 접속한 경우에는 주소를 직접 입력합니다.
 
-주소 검색은 대상 Mac의 TCP 연결 테이블에서 로컬 포트 5900인 직접 연결을
-확인합니다. Screen Sharing 서버는 `root` 프로세스로 실행되므로 일반 사용자
-권한의 `lsof`에는 연결이 표시되지 않을 수 있어, InputBridge는 `netstat`의 TCP
-테이블을 사용합니다.
+`포트 찾기`는 대상 Mac이 먼저 실행된 상태에서 `45831...45840`, `48000`,
+`50000`, `55000`을 병렬 검사합니다. 대상 Mac은 설정된 포트 하나만 열며,
+조작 Mac은 열린 후보가 정확히 하나일 때만 해당 포트를 자동 적용합니다.
+
+주소 검색은 조작 Mac의 TCP 연결 테이블에서 원격 포트가 5900인 직접 연결을
+확인합니다. `자동` 모드의 기존 방식 fallback은 대상 Mac에서 로컬 포트가 5900인
+접속자도 확인합니다. InputBridge는 일반 사용자의 `lsof`에 보이지 않는
+`screensharingd` 연결을 찾기 위해 `netstat`의 TCP 테이블을 사용합니다.
 
 같은 LAN에서는 IP 대신 Bonjour 호스트 이름을 사용할 수 있습니다.
 
@@ -66,8 +69,8 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 scutil --get LocalHostName
 ```
 
-결과가 `Chris-MacBook`이면 대상 Mac의 주소 입력란에
-`Chris-MacBook.local`을 입력합니다.
+결과가 `Target-Mac`이면 조작 Mac의 대상 주소 입력란에
+`Target-Mac.local`을 입력합니다.
 
 정상 동작 시 상태가 다음 순서로 표시됩니다.
 
@@ -104,13 +107,13 @@ open /Applications/InputBridge.app
 패키지 생성:
 
 ```sh
-./Scripts/package-unsigned.sh 0.1.4
+./Scripts/package-unsigned.sh 0.1.7
 ```
 
 결과:
 
 ```text
-dist/InputBridge-0.1.4-unsigned-universal.zip
+dist/InputBridge-0.1.7-unsigned-universal.zip
 ```
 
 ## 현재 구현
@@ -118,37 +121,52 @@ dist/InputBridge-0.1.4-unsigned-universal.zip
 - macOS 입력 소스 변경 알림 및 0.2초 폴링
 - ABC와 기본 한글 두벌식의 portable ID 매핑
 - Network.framework TCP 송수신
-- 직접 연결된 Screen Sharing 접속자의 주소 자동 감지
+- 나가거나 들어오는 직접 Screen Sharing 상대 주소 자동 감지
+- 조작 Mac에서 시작하는 연결과 기존 방향 자동 fallback
+- 실행 중인 대상 InputBridge 포트 자동 검색
 - 연결 실패 시 자동 재연결
+- 연결·리스너의 명시적 dispose와 포트 변경 시 정리
 - 공유 키 HMAC-SHA256 메시지 인증
 - timestamp와 sequence 기반 기본 replay 방지
 - Apple Silicon 및 Intel Universal 앱 패키징
 
 ## 문제 해결
 
-대상 Mac에서 포트가 열렸는지 확인:
+자동 모드에서 대상 Mac의 포트가 열렸는지 확인:
 
 ```sh
 lsof -nP -iTCP:45831 -sTCP:LISTEN
 ```
 
-조작 Mac에서 로컬 수신 확인:
+조작 Mac에서 대상 Mac으로 연결 확인:
 
 ```sh
-nc -vz 127.0.0.1 45831
+nc -G 3 -vz <대상-Mac-주소> 45831
 ```
 
-대상 Mac에서 조작 Mac으로 연결 확인:
+기존 방식에서 대상 Mac에서 조작 Mac으로 연결 확인:
 
 ```sh
 nc -G 3 -vz <조작-Mac-주소> 45831
 ```
 
-- `Connection refused`: 조작 Mac이 수신 대기 중인지 확인합니다.
+들어오거나 나가는 Screen Sharing 상대 주소 검색과 InputBridge 포트 연결을 한 번에 진단:
+
+```sh
+./Scripts/diagnose-screen-sharing-peer.sh
+```
+
+기본값이 아닌 포트를 사용하면 포트 번호를 인자로 전달합니다.
+
+```sh
+./Scripts/diagnose-screen-sharing-peer.sh 45832
+```
+
+- `Connection refused`: 선택한 방식에서 연결을 받는 Mac이 실행 중인지 확인합니다.
 - `Operation timed out`: 주소, macOS 방화벽 또는 VPN 경로를 확인합니다.
 - `인증되지 않았거나 오래된 메시지 무시`: 양쪽 공유 키와 시스템 시간을 확인합니다.
-- Screen Sharing 주소가 검색되지 않음: 대상 Mac에서 직접 Screen Sharing 연결이
-  유지 중인지 확인합니다. 여러 접속자 또는 Apple Account 중계 연결은 자동으로
+- Screen Sharing 주소가 검색되지 않음: 조작 Mac에서 직접 Screen Sharing 연결이
+  유지 중인지 확인합니다. 여러 대상 또는 Apple Account 중계 연결은 자동으로
   선택하지 않습니다.
 
 ## 보안 및 제한 사항

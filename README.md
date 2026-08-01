@@ -37,7 +37,25 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 - macOS 13 Ventura 이상
 - Apple Silicon 또는 Intel Mac
 - 양쪽 Mac에 `ABC`와 `한국어 - 두벌식` 입력 소스 등록
-- 양쪽 Mac이 서로 접근할 수 있는 LAN 또는 VPN
+- 조작 Mac에서 대상 Mac의 InputBridge TCP 포트로 접근할 수 있는 LAN 또는 VPN
+
+## 설치 및 업데이트
+
+양쪽 Mac에서 기존 InputBridge를 완전히 종료한 뒤 새 앱으로 교체합니다. 실행 중인
+앱 파일만 덮어쓰면 이전 프로세스는 메모리에 남아 있으므로 먼저 다음을 실행하는 것이
+안전합니다.
+
+```sh
+killall InputBridge 2>/dev/null || true
+```
+
+압축을 풀고 `InputBridge.app`을 `/Applications`로 옮깁니다. 인터넷에서 받은 앱으로
+인식되어 실행이 차단되면 앱을 한 번 열어 본 다음 `시스템 설정 → 개인정보 보호 및
+보안 → 보안 → 그래도 열기`를 선택합니다.
+
+새 ad-hoc 서명 빌드로 교체한 뒤 인바운드 연결이 시간 초과되면
+`시스템 설정 → 네트워크 → 방화벽 → 옵션`에서 InputBridge의 들어오는 연결을
+허용했는지 다시 확인합니다.
 
 ## 사용 방법
 
@@ -62,6 +80,17 @@ Screen Sharing 대상 Mac에서 입력 소스가 바뀌면 별도의 TCP 연결�
 확인합니다. `자동` 모드의 기존 방식 fallback은 대상 Mac에서 로컬 포트가 5900인
 접속자도 확인합니다. InputBridge는 일반 사용자의 `lsof`에 보이지 않는
 `screensharingd` 연결을 찾기 위해 `netstat`의 TCP 테이블을 사용합니다.
+
+## 연결 방식
+
+| 모드 | 연결 시작 | 주소 입력 | 용도 |
+| --- | --- | --- | --- |
+| `자동 (권장)` | 조작 Mac → 대상 Mac 우선 | 조작 Mac에 대상 주소 | Screen Sharing과 같은 방향을 사용하고 실패 시 기존 방향 시도 |
+| `기존 방식` | 대상 Mac → 조작 Mac | 대상 Mac에 조작 주소 | 이전 버전의 연결 방향을 명시적으로 사용 |
+
+자동 모드에서도 대상 Mac은 설정한 포트 하나만 엽니다. 조작 Mac의 `포트 찾기`가
+후보 포트에 짧은 TCP 연결을 병렬로 시도하며, 검색 연결은 결과 확인 직후 모두
+종료됩니다.
 
 같은 LAN에서는 IP 대신 Bonjour 호스트 이름을 사용할 수 있습니다.
 
@@ -132,6 +161,44 @@ dist/InputBridge-0.1.7-unsigned-universal.zip
 
 ## 문제 해결
 
+### 계속 `연결 중` 또는 `연결 대기`로 표시됨
+
+1. 대상 Mac의 InputBridge를 먼저 시작합니다.
+2. 조작 Mac에서 `Screen Sharing 대상 찾기`와 `포트 찾기`를 순서대로 실행합니다.
+3. 양쪽 포트와 공유 키가 같은지 확인합니다.
+4. 조작 Mac에서 실제 TCP 접근을 검사합니다.
+
+```sh
+nc -G 3 -vz <대상-Mac-주소> <포트>
+```
+
+- `succeeded`: TCP 경로는 정상입니다. 공유 키, 시스템 시간, 입력 소스 등록을
+  확인합니다.
+- `Connection refused`: 대상까지 도달했지만 해당 포트에서 앱이 수신 중이지
+  않습니다. 대상 Mac의 역할·포트·실행 상태를 확인합니다.
+- `Operation timed out`: 중간 방화벽 또는 macOS 방화벽이 패킷을 드롭할 가능성이
+  큽니다.
+- `Network is unreachable`: 대상 주소로 가는 라우팅이 없습니다.
+
+### `NWError 48` 또는 포트가 이미 사용 중이라고 표시됨
+
+오류 48은 `Address already in use`입니다. 같은 포트를 쓰는 프로세스를 확인합니다.
+
+```sh
+lsof -nP -iTCP:<포트>
+```
+
+이전 InputBridge가 남아 있으면 완전히 종료한 뒤 다시 실행합니다.
+
+```sh
+killall InputBridge
+```
+
+포트를 변경할 때는 앱을 중지하고 잠시 기다린 뒤 다시 시작합니다. 0.1.7부터 연결,
+리스너, 재연결 작업과 콜백 핸들러를 명시적으로 정리합니다.
+
+### 명령으로 상세 진단
+
 자동 모드에서 대상 Mac의 포트가 열렸는지 확인:
 
 ```sh
@@ -150,7 +217,8 @@ nc -G 3 -vz <대상-Mac-주소> 45831
 nc -G 3 -vz <조작-Mac-주소> 45831
 ```
 
-들어오거나 나가는 Screen Sharing 상대 주소 검색과 InputBridge 포트 연결을 한 번에 진단:
+들어오거나 나가는 Screen Sharing 상대 주소 검색과 InputBridge 포트 연결을 한 번에
+진단:
 
 ```sh
 ./Scripts/diagnose-screen-sharing-peer.sh
@@ -162,8 +230,6 @@ nc -G 3 -vz <조작-Mac-주소> 45831
 ./Scripts/diagnose-screen-sharing-peer.sh 45832
 ```
 
-- `Connection refused`: 선택한 방식에서 연결을 받는 Mac이 실행 중인지 확인합니다.
-- `Operation timed out`: 주소, macOS 방화벽 또는 VPN 경로를 확인합니다.
 - `인증되지 않았거나 오래된 메시지 무시`: 양쪽 공유 키와 시스템 시간을 확인합니다.
 - Screen Sharing 주소가 검색되지 않음: 조작 Mac에서 직접 Screen Sharing 연결이
   유지 중인지 확인합니다. 여러 대상 또는 Apple Account 중계 연결은 자동으로

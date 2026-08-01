@@ -2,7 +2,7 @@
 
 set -eu
 
-version="${1:-0.1.3}"
+version="${1:-0.1.7}"
 build_number="${2:-1}"
 project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 binary_path="$project_dir/.build/apple/Products/Release/InputBridge"

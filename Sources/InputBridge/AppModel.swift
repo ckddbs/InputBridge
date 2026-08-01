@@ -7,17 +7,21 @@ enum SyncRole: String, CaseIterable, Identifiable {
 
     var id: Self { self }
     var title: String { self == .sender ? "대상 Mac" : "조작 Mac" }
-    var explanation: String {
-        self == .sender
-            ? "Screen Sharing 대상: 입력 소스 변경을 조작 Mac으로 보냅니다."
-            : "키보드를 사용하는 Mac: 대상 Mac의 입력 소스 변경을 받습니다."
-    }
+}
+
+enum SyncConnectionMode: String, CaseIterable, Identifiable {
+    case automatic
+    case legacy
+
+    var id: Self { self }
+    var title: String { self == .automatic ? "자동 (권장)" : "기존 방식" }
 }
 
 @MainActor
 final class AppModel: ObservableObject {
     @Published var role: SyncRole = .sender
-    @Published var host = "127.0.0.1"
+    @Published var connectionMode: SyncConnectionMode = .automatic
+    @Published var host = ""
     @Published var port: UInt16 = 45831
     @Published var sharedSecret = ""
     @Published var useKoreanMapping = true
@@ -26,10 +30,55 @@ final class AppModel: ObservableObject {
     @Published private(set) var detectedScreenSharingHost: String?
     @Published private(set) var isSearchingScreenSharingHost = false
     @Published private(set) var screenSharingSearchMessage: String?
+    @Published private(set) var isSearchingInputBridgePort = false
+    @Published private(set) var portSearchMessage: String?
 
     private let inputSources = InputSourceController()
     private let peerDetector = ScreenSharingPeerDetector()
+    private let portScanner = InputBridgePortScanner()
     private var transport: SyncTransport?
+
+    var showsHostField: Bool {
+        switch (connectionMode, role) {
+        case (.automatic, .receiver), (.legacy, .sender):
+            return true
+        case (.automatic, .sender), (.legacy, .receiver):
+            return false
+        }
+    }
+
+    var hostFieldPrompt: String {
+        role == .receiver ? "대상 Mac 주소 또는 이름" : "조작 Mac 주소 또는 이름"
+    }
+
+    var peerSearchTitle: String {
+        role == .receiver ? "Screen Sharing 대상 찾기" : "Screen Sharing 접속자 찾기"
+    }
+
+    var roleExplanation: String {
+        switch (connectionMode, role) {
+        case (.automatic, .sender):
+            return "Screen Sharing 대상: 조작 Mac의 연결을 받아 입력 소스 변경을 보냅니다."
+        case (.automatic, .receiver):
+            return "키보드를 사용하는 Mac: Screen Sharing 대상에 연결해 변경을 받습니다."
+        case (.legacy, .sender):
+            return "Screen Sharing 대상: 조작 Mac에 연결해 입력 소스 변경을 보냅니다."
+        case (.legacy, .receiver):
+            return "키보드를 사용하는 Mac: 대상 Mac의 연결을 받아 변경을 받습니다."
+        }
+    }
+
+    var waitingTitle: String {
+        role == .sender ? "조작 Mac의 연결을 기다립니다." : "대상 Mac의 연결을 기다립니다."
+    }
+
+    var canSearchInputBridgePort: Bool {
+        role == .receiver
+            && connectionMode == .automatic
+            && !isRunning
+            && !isSearchingInputBridgePort
+            && !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     func toggle() {
         isRunning ? stop() : start()
@@ -43,21 +92,24 @@ final class AppModel: ObservableObject {
     }
 
     func searchScreenSharingPeer() {
-        guard role == .sender, !isRunning, !isSearchingScreenSharingHost else { return }
+        guard showsHostField, !isRunning, !isSearchingScreenSharingHost else { return }
 
         isSearchingScreenSharingHost = true
         detectedScreenSharingHost = nil
         screenSharingSearchMessage = nil
 
         let detector = peerDetector
+        let direction: ScreenSharingConnectionDirection = role == .receiver
+            ? .outgoing
+            : .incoming
         Task.detached(priority: .utility) {
-            let detectedHost = detector.detect()
+            let detectedHost = detector.detect(direction: direction)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isSearchingScreenSharingHost = false
                 self.detectedScreenSharingHost = detectedHost
                 self.screenSharingSearchMessage = detectedHost == nil
-                    ? "직접 연결된 Screen Sharing 주소를 찾지 못했습니다."
+                    ? "현재 역할에 맞는 Screen Sharing 연결을 찾지 못했습니다."
                     : nil
             }
         }
@@ -76,16 +128,50 @@ final class AppModel: ObservableObject {
         screenSharingSearchMessage = nil
     }
 
+    func searchInputBridgePort() {
+        guard canSearchInputBridgePort else { return }
+
+        let targetHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSearchingInputBridgePort = true
+        portSearchMessage = nil
+
+        let scanner = portScanner
+        Task.detached(priority: .utility) {
+            let result = scanner.scan(host: targetHost)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isSearchingInputBridgePort = false
+                switch result {
+                case .found(let detectedPort):
+                    self.port = detectedPort
+                    self.portSearchMessage = "InputBridge 포트 \(detectedPort)을(를) 적용했습니다."
+                case .notFound:
+                    self.portSearchMessage = "실행 중인 InputBridge 포트를 찾지 못했습니다."
+                case .multiple(let ports):
+                    let values = ports.map(String.init).joined(separator: ", ")
+                    self.portSearchMessage = "열린 후보가 여러 개입니다: \(values)"
+                }
+            }
+        }
+    }
+
     private func start() {
         guard !sharedSecret.isEmpty else {
             status = "공유 키를 입력하세요."
             return
         }
 
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !showsHostField || !trimmedHost.isEmpty else {
+            status = "\(hostFieldPrompt)을 입력하거나 검색하세요."
+            return
+        }
+
         let mapper = InputSourceMapper(useKoreanDefaults: useKoreanMapping)
         let transport = SyncTransport(
             role: role,
-            host: host,
+            mode: connectionMode,
+            host: trimmedHost,
             port: port,
             sharedSecret: sharedSecret
         )
@@ -106,6 +192,9 @@ final class AppModel: ObservableObject {
             }
         }
 
+        self.transport = transport
+        transport.start()
+
         if role == .sender {
             inputSources.onChange = { [weak transport] source in
                 Task { @MainActor [weak self] in
@@ -117,12 +206,26 @@ final class AppModel: ObservableObject {
             if let current = inputSources.currentInputSourceID() {
                 transport.send(inputSource: mapper.portableID(for: current))
             }
+
+            if connectionMode == .automatic {
+                discoverLegacyFallback(for: transport)
+            }
         }
 
-        self.transport = transport
-        transport.start()
         isRunning = true
-        status = role == .sender ? "원격 Mac에 연결 중…" : "연결 대기 중…"
+        if connectionMode == .automatic {
+            status = role == .sender ? "조작 Mac 연결 대기 중…" : "대상 Mac에 연결 중…"
+        } else {
+            status = role == .sender ? "조작 Mac에 연결 중…" : "연결 대기 중…"
+        }
+    }
+
+    private func discoverLegacyFallback(for transport: SyncTransport) {
+        let detector = peerDetector
+        Task.detached(priority: .utility) {
+            guard let host = detector.detect(direction: .incoming) else { return }
+            transport.connectLegacyFallback(to: host)
+        }
     }
 
     private func stop() {

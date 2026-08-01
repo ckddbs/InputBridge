@@ -23,6 +23,33 @@ final class ScreenSharingPeerDetectorTests: XCTestCase {
         XCTAssertNil(ScreenSharingPeerDetector.peerHost(fromNetstatOutput: output))
     }
 
+    func testFindsRemoteHostForOutgoingScreenSharingConnection() {
+        let output = """
+        tcp4 0 0 192.168.0.12.51548 192.168.100.53.5900 ESTABLISHED
+        """
+
+        XCTAssertEqual(
+            ScreenSharingPeerDetector.peerHost(
+                fromNetstatOutput: output,
+                direction: .outgoing
+            ),
+            "192.168.100.53"
+        )
+    }
+
+    func testOutgoingSearchIgnoresIncomingScreenSharingConnection() {
+        let output = """
+        tcp4 0 0 192.168.100.53.5900 192.168.0.12.51548 ESTABLISHED
+        """
+
+        XCTAssertNil(
+            ScreenSharingPeerDetector.peerHost(
+                fromNetstatOutput: output,
+                direction: .outgoing
+            )
+        )
+    }
+
     func testSupportsIPv6Addresses() {
         let output = """
         tcp6 0 0 fd00::53.5900 fd00::215.51548 ESTABLISHED

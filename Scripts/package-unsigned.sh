@@ -2,10 +2,9 @@
 
 set -eu
 
-version="${1:-0.1.7}"
+version="${1:-0.1.8}"
 build_number="${2:-1}"
 project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-binary_path="$project_dir/.build/apple/Products/Release/InputBridge"
 icon_path="$project_dir/Assets/AppIcon.icns"
 output_dir="$project_dir/dist"
 output_path="$output_dir/InputBridge-$version-unsigned-universal.zip"
@@ -19,6 +18,8 @@ trap cleanup EXIT INT TERM
 
 cd "$project_dir"
 swift build -c release --arch arm64 --arch x86_64
+# The universal build output directory differs between Swift toolchains.
+binary_path="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/InputBridge"
 
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" "$output_dir"
 cp "$binary_path" "$app_path/Contents/MacOS/InputBridge"

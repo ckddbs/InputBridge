@@ -78,4 +78,30 @@ final class ScreenSharingPeerDetectorTests: XCTestCase {
 
         XCTAssertNil(ScreenSharingPeerDetector.peerHost(fromNetstatOutput: output))
     }
+
+    func testFindsOutgoingPeerFromProcessSocketConnections() {
+        let connections = [
+            TCPConnection(localPort: 52650, remoteHost: "192.168.100.50", remotePort: 5900),
+            TCPConnection(localPort: 52651, remoteHost: "160.79.104.10", remotePort: 443),
+        ]
+
+        XCTAssertEqual(
+            ScreenSharingPeerDetector.peerHost(from: connections, direction: .outgoing),
+            "192.168.100.50"
+        )
+        XCTAssertNil(ScreenSharingPeerDetector.peerHost(from: connections, direction: .incoming))
+    }
+
+    func testProcessSocketConnectionsIgnoreLoopbackAndAmbiguousPeers() {
+        let loopback = [
+            TCPConnection(localPort: 52650, remoteHost: "127.0.0.1", remotePort: 5900),
+        ]
+        XCTAssertNil(ScreenSharingPeerDetector.peerHost(from: loopback, direction: .outgoing))
+
+        let multiple = [
+            TCPConnection(localPort: 52650, remoteHost: "192.168.100.50", remotePort: 5900),
+            TCPConnection(localPort: 52651, remoteHost: "192.168.100.51", remotePort: 5900),
+        ]
+        XCTAssertNil(ScreenSharingPeerDetector.peerHost(from: multiple, direction: .outgoing))
+    }
 }

@@ -78,8 +78,10 @@ killall InputBridge 2>/dev/null || true
 
 주소 검색은 조작 Mac의 TCP 연결 테이블에서 원격 포트가 5900인 직접 연결을
 확인합니다. `자동` 모드의 기존 방식 fallback은 대상 Mac에서 로컬 포트가 5900인
-접속자도 확인합니다. InputBridge는 일반 사용자의 `lsof`에 보이지 않는
-`screensharingd` 연결을 찾기 위해 `netstat`의 TCP 테이블을 사용합니다.
+접속자도 확인합니다. InputBridge는 먼저 현재 사용자 프로세스(Screen Sharing 앱 등)의
+소켓 정보를 `libproc`으로 읽습니다. macOS 27부터는 앱에서 실행한 `netstat`이 빈 TCP
+테이블을 돌려줄 수 있기 때문입니다. 여기서 찾지 못하면 일반 사용자의 `lsof`에 보이지
+않는 `screensharingd` 연결을 찾기 위해 `netstat`의 TCP 테이블을 사용합니다.
 
 ## 연결 방식
 
@@ -136,13 +138,13 @@ open /Applications/InputBridge.app
 패키지 생성:
 
 ```sh
-./Scripts/package-unsigned.sh 0.1.7
+./Scripts/package-unsigned.sh 0.1.8
 ```
 
 결과:
 
 ```text
-dist/InputBridge-0.1.7-unsigned-universal.zip
+dist/InputBridge-0.1.8-unsigned-universal.zip
 ```
 
 ## 현재 구현
